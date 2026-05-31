@@ -2,7 +2,7 @@
 
 namespace ClearBank.DeveloperTest.Data
 {
-    public class AccountDataStore
+    public class AccountDataStore : IAccountDataStore
     {
         public Account GetAccount(string accountNumber)
         {
@@ -12,7 +12,7 @@ namespace ClearBank.DeveloperTest.Data
 
         public void UpdateAccount(Account account)
         {
-            // Update account in database, code removed for brevity
+            // Update database, code removed for brevity
         }
     }
 }

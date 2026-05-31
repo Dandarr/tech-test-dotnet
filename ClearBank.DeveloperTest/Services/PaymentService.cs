@@ -1,90 +1,47 @@
 ﻿using ClearBank.DeveloperTest.Data;
 using ClearBank.DeveloperTest.Types;
-using System.Configuration;
+using ClearBank.DeveloperTest.Validators;
 
 namespace ClearBank.DeveloperTest.Services
 {
     public class PaymentService : IPaymentService
     {
+        private readonly IAccountDataStore _accountDataStore;
+        private readonly IValidatorFactory _validatorFactory;
+
+
+        //gets config for dataStoreType since this doesnt have a program cs and i don't want to assume it will.
+        public PaymentService()
+            : this(new AccountDataStoreFactory().Create(), new PaymentValidatorFactory())
+        {
+        }
+
+        public PaymentService(IAccountDataStore accountDataStore, IValidatorFactory validatorFactory)
+        {
+            _accountDataStore = accountDataStore;
+            _validatorFactory = validatorFactory;
+        }
+
         public MakePaymentResult MakePayment(MakePaymentRequest request)
         {
-            var dataStoreType = ConfigurationManager.AppSettings["DataStoreType"];
+            var account = _accountDataStore.GetAccount(request.DebtorAccountNumber);
+            var result = new MakePaymentResult { Success = false };
 
-            Account account = null;
+            //Ask factory for validator
+            var validator = _validatorFactory.GetValidator(request.PaymentScheme);
 
-            if (dataStoreType == "Backup")
+            //If validator exists, run the rules
+            if (validator != null)
             {
-                var accountDataStore = new BackupAccountDataStore();
-                account = accountDataStore.GetAccount(request.DebtorAccountNumber);
-            }
-            else
-            {
-                var accountDataStore = new AccountDataStore();
-                account = accountDataStore.GetAccount(request.DebtorAccountNumber);
+                result.Success = validator.IsValid(account, request);
             }
 
-            var result = new MakePaymentResult();
-
-            result.Success = true;
-            
-            switch (request.PaymentScheme)
-            {
-                case PaymentScheme.Bacs:
-                    if (account == null)
-                    {
-                        result.Success = false;
-                    }
-                    else if (!account.AllowedPaymentSchemes.HasFlag(AllowedPaymentSchemes.Bacs))
-                    {
-                        result.Success = false;
-                    }
-                    break;
-
-                case PaymentScheme.FasterPayments:
-                    if (account == null)
-                    {
-                        result.Success = false;
-                    }
-                    else if (!account.AllowedPaymentSchemes.HasFlag(AllowedPaymentSchemes.FasterPayments))
-                    {
-                        result.Success = false;
-                    }
-                    else if (account.Balance < request.Amount)
-                    {
-                        result.Success = false;
-                    }
-                    break;
-
-                case PaymentScheme.Chaps:
-                    if (account == null)
-                    {
-                        result.Success = false;
-                    }
-                    else if (!account.AllowedPaymentSchemes.HasFlag(AllowedPaymentSchemes.Chaps))
-                    {
-                        result.Success = false;
-                    }
-                    else if (account.Status != AccountStatus.Live)
-                    {
-                        result.Success = false;
-                    }
-                    break;
-            }
-
+            //If valid process the payment
             if (result.Success)
             {
-                account.Balance -= request.Amount;
+                account.DeductBalance(request.Amount);
 
-                if (dataStoreType == "Backup")
-                {
-                    var accountDataStore = new BackupAccountDataStore();
-                    accountDataStore.UpdateAccount(account);
-                }
-                else
-                {
-                    var accountDataStore = new AccountDataStore();
-                    accountDataStore.UpdateAccount(account);
-                }
+                _accountDataStore.UpdateAccount(account);
             }
 
             return result;
